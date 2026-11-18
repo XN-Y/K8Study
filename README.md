@@ -32,6 +32,8 @@ curl -fsS 'http://127.0.0.1:8088/api/shipping?kg=3'
 
 后面的本机示例使用 `K8s-Go-Lab` 和 `D:\Project\K8S`。换机器时使用自己的 WSL 实例和克隆目录。
 
+后续实验用[镜像导入脚本](scripts/load-lab-images.sh)准备 BusyBox、Envoy、Metrics Server 等公开镜像。脚本复用 Docker 中已有的镜像，首次运行时从仓库拉取。Go 实验镜像由各节的 `docker build` 命令构建。
+
 ### 进入实验环境
 
 | 项目 | 本机配置 |
@@ -132,7 +134,7 @@ Windows 127.0.0.1:8088
 集群内可以直接用 DNS 名访问同一个 Service。运行一个短命 BusyBox Pod 检查服务发现和跨 Pod 网络，命令结束后从日志读出响应。
 
 ```bash
-kind load docker-image busybox:1.37.0 --name go-lab
+bash scripts/load-lab-images.sh busybox:1.37.0
 kubectl run net-check --image=busybox:1.37.0 --image-pull-policy=IfNotPresent --restart=Never --command -- wget -qO- 'http://shipping.go-lab.svc.cluster.local/api/shipping?kg=3'
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/net-check --timeout=45s
 kubectl logs pod/net-check

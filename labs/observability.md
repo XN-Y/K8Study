@@ -34,10 +34,10 @@ kubectl logs deployment/checkout --tail=5
 
 ## 用 Prometheus 查询请求量、错误率和延迟
 
-本机集群已安装 Prometheus v3.13.5。若重建过集群，把缓存镜像导入后应用 [Prometheus 清单](../k8s/prometheus.yaml)：
+使用新集群时先准备 Prometheus v3.13.5 镜像，再应用[清单](../k8s/prometheus.yaml)。
 
 ```bash
-kind load docker-image prom/prometheus:v3.13.5 --name go-lab
+bash scripts/load-lab-images.sh prom/prometheus:v3.13.5
 kubectl apply -f k8s/prometheus.yaml
 kubectl rollout status deployment/prometheus-lab --timeout=120s
 ```
@@ -59,7 +59,7 @@ kubectl rollout status deployment/prometheus-lab --timeout=120s
 [慢响应清单](../k8s/slow-shipping.yaml) 会启动一个独立的模拟服务，收到连接后等待 5 秒才返回。让结算服务临时调用它。真实运费 Service 继续处理请求。
 
 ```bash
-kind load docker-image busybox:1.37.0 --name go-lab
+bash scripts/load-lab-images.sh busybox:1.37.0
 kubectl apply -f k8s/slow-shipping.yaml
 kubectl rollout status deployment/slow-shipping --timeout=90s
 kubectl set env deployment/checkout SHIPPING_API_URL=http://slow-shipping.go-lab.svc.cluster.local/api/shipping

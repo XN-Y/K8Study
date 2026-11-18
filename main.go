@@ -35,6 +35,37 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var draining atomic.Bool
+
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           shippingHandler(logger, pod, greeting, &draining),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	shutdown := make(chan error, 1)
+	go func() {
+		<-ctx.Done()
+		draining.Store(true)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		shutdown <- server.Shutdown(shutdownCtx)
+	}()
+
+	logger.Info("HTTP server starting", "address", server.Addr, "pod", pod, "version", version)
+	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		logger.Error("HTTP server failed", "error", err)
+		os.Exit(1)
+	}
+	if err := <-shutdown; err != nil {
+		logger.Error("HTTP shutdown failed", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("HTTP server stopped", "pod", pod)
+}
+
+func shippingHandler(logger *slog.Logger, pod, greeting string, draining *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -65,33 +96,7 @@ func main() {
 		}{Weight: weight, Price: price, Pod: pod, Version: version})
 	})
 
-	server := &http.Server{
-		Addr:              ":8080",
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-	shutdown := make(chan error, 1)
-	go func() {
-		<-ctx.Done()
-		draining.Store(true)
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		shutdown <- server.Shutdown(shutdownCtx)
-	}()
-
-	logger.Info("HTTP server starting", "address", server.Addr, "pod", pod, "version", version)
-	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("HTTP server failed", "error", err)
-		os.Exit(1)
-	}
-	if err := <-shutdown; err != nil {
-		logger.Error("HTTP shutdown failed", "error", err)
-		os.Exit(1)
-	}
-	logger.Info("HTTP server stopped", "pod", pod)
+	return mux
 }
 
 func writeJSON(w http.ResponseWriter, body any) {

@@ -43,8 +43,47 @@ jobs:
           go vet ./...
       - name: Verify the container builds
         run: |
-          docker build --build-arg "VERSION=$GITHUB_SHA" -t go-shipping:ci .
-          docker build -f cmd/checkout/Dockerfile -t go-checkout:ci .
+          docker build --build-arg VERSION=v1 -t go-shipping:v1 .
+          docker build -f cmd/checkout/Dockerfile -t go-checkout:v2 .
+      - name: Install kind and kubectl
+        run: |
+          tools_dir="$RUNNER_TEMP/k8study-tools"
+          mkdir -p "$tools_dir"
+          curl -fLsS --retry 2 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 -o "$tools_dir/kind"
+          curl -fLsS --retry 2 https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl -o "$tools_dir/kubectl"
+          (
+            cd "$tools_dir"
+            sha256sum -c <<'SUMS'
+          aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  kind
+          8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a  kubectl
+          SUMS
+            chmod +x kind kubectl
+          )
+          printf '%s\n' "$tools_dir" >> "$GITHUB_PATH"
+      - name: Smoke test a fresh kind deployment
+        id: lab
+        run: |
+          kind create cluster --name go-lab --config k8s/kind.yaml --image kindest/node:v1.36.4 --wait 120s
+          kind load docker-image go-shipping:v1 go-checkout:v2 --name go-lab
+          bash scripts/load-lab-images.sh busybox:1.37.0
+          kubectl apply -f k8s/app.yaml -f k8s/checkout.yaml
+          bash scripts/check-lab.sh
+          kubectl -n go-lab rollout status deployment/checkout --timeout=90s
+          kubectl -n go-lab run checkout-check --image=busybox:1.37.0 --image-pull-policy=IfNotPresent --restart=Never \
+            --command -- wget -qO- 'http://checkout.go-lab.svc.cluster.local/api/checkout?subtotal_cny=100&kg=3'
+          kubectl -n go-lab wait --for=jsonpath='{.status.phase}'=Succeeded pod/checkout-check --timeout=60s
+          kubectl -n go-lab logs pod/checkout-check | python3 -c '
+          import json, sys
+          checkout = json.load(sys.stdin)
+          if checkout["total_cny"] != 112 or checkout["shipping"]["price_cny"] != 12:
+              sys.exit(f"Unexpected checkout response: {checkout}")
+          print("Checkout used the shipping Service and returned 112 CNY.")
+          '
+      - name: Show cluster state after a smoke test failure
+        if: failure() && steps.lab.outcome == 'failure'
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl -n go-lab get events --sort-by=.lastTimestamp || true
 
   publish:
     needs: verify

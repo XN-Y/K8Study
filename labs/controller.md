@@ -21,7 +21,7 @@ ShippingPreview 的 spec → Go Reconcile → Deployment → ReplicaSet → Pod
 
 ## 编译和部署
 
-本机已经构建好控制器镜像。重建集群时，先按[首次部署](../README.md#用-yaml-声明应用状态)创建 `go-lab` 命名空间，再在实验 **Bash** 导入镜像。如果修改了 Go 源码，先在一个新开的 **PowerShell** 编译 Linux 程序，再回到实验 Bash 构建镜像。
+先完成[首次部署](../README.md#用-yaml-声明应用状态)。如果缺少控制器镜像，在一个新开的 **PowerShell** 编译 Linux 程序，再回到实验 Bash 构建镜像。
 
 ```powershell
 Set-Location D:\Project\K8S\labs\preview-controller
@@ -31,12 +31,25 @@ $env:CGO_ENABLED = '0'
 go build -trimpath -ldflags '-s -w' -o preview-controller-linux-amd64 .
 ```
 
+使用 Linux 或 WSL 中的 Go 时，也可以在仓库根目录编译：
+
+```bash
+(cd labs/preview-controller && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o preview-controller-linux-amd64 .)
+```
+
 ```bash
 # 源码改动后构建新镜像时，选新标签并同步修改 k8s/preview-controller.yaml
 docker build --pull=false -t go-preview-controller:v2 labs/preview-controller
 ```
 
-从项目根目录应用清单：
+预览实验需要运费 v1 和 v2。首次部署已构建 v1，如果还没做过滚动发布练习，从仓库根目录构建 v2。
+
+```bash
+docker image inspect go-shipping:v2 >/dev/null 2>&1 ||
+  docker build --pull=false --build-arg VERSION=v2 -t go-shipping:v2 .
+```
+
+已有控制器和运费镜像后，从项目根目录应用清单：
 
 ```bash
 kind load docker-image go-preview-controller:v2 go-shipping:v1 go-shipping:v2 --name go-lab

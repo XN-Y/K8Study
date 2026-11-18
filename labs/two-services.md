@@ -24,9 +24,10 @@ kubectl rollout status deployment/checkout --timeout=120s
 kubectl get deployment/shipping deployment/checkout service/shipping service/checkout
 ```
 
-从集群内部请求结算 Service，核对返回的运费 Pod 和合计金额。若重建过集群，先运行 `kind load docker-image busybox:1.37.0 --name go-lab`。
+从集群内部请求结算 Service，核对返回的运费 Pod 和合计金额。
 
 ```bash
+bash scripts/load-lab-images.sh busybox:1.37.0
 kubectl run checkout-check --image=busybox:1.37.0 --image-pull-policy=IfNotPresent --restart=Never \
   --command -- wget -qO- 'http://checkout.go-lab.svc.cluster.local/api/checkout?subtotal_cny=100&kg=3'
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/checkout-check --timeout=60s
@@ -40,7 +41,7 @@ kubectl delete pod checkout-check
 
 ## 用 Gateway API 接入两个服务
 
-Envoy Gateway v1.10.0 已安装在实验集群。若重建过集群，先执行本页末尾的恢复步骤。把 [入口清单](../k8s/gateway.yaml) 与下表对照：
+如果集群还没有 Envoy Gateway v1.10.0，先执行[安装控制器](#安装或恢复-envoy-gateway)的步骤。把 [入口清单](../k8s/gateway.yaml) 与下表对照：
 
 | 资源 | 在这个实验里的职责 |
 | --- | --- |
@@ -109,15 +110,29 @@ kubectl set env deployment/checkout --list
 
 完成练习后可以保留应用，也可以在结束端口转发后，用 `kubectl delete -f k8s/gateway.yaml` 和 `kubectl delete -f k8s/checkout.yaml` 清理这两章的对象。
 
-### 重建 kind 集群后恢复组件
+### 安装或恢复 Envoy Gateway
 
-如果 Docker 缓存还在，在 **Bash** 把两个 Envoy 镜像导入新集群。
+在 **Bash** 的仓库根目录准备两个 Envoy 镜像。首次执行会拉取缺少的镜像。
 
 ```bash
-kind load docker-image envoyproxy/gateway:v1.10.0 docker.io/envoyproxy/envoy:distroless-v1.40.2 --name go-lab
+bash scripts/load-lab-images.sh envoyproxy/gateway:v1.10.0 docker.io/envoyproxy/envoy:distroless-v1.40.2
 ```
 
-用 **PowerShell** 下载并校验固定版本的上游清单，再从 WSL 应用。控制器和代理镜像已从 Windows 下载到本机 Docker 缓存，代理清单用对应版本标签引用导入的镜像。
+如果 Bash 能访问 GitHub，可直接下载并校验固定版本的清单，再应用到集群。
+
+```bash
+(
+  set -euo pipefail
+  manifest=$(mktemp)
+  trap 'rm -f -- "$manifest"' EXIT
+  curl -fLsS https://github.com/envoyproxy/gateway/releases/download/v1.10.0/install.yaml -o "$manifest"
+  printf '%s  %s\n' f87f4d59b983aa760da52a2a0002c612028106fe69beefdf3d30cfb03905944e "$manifest" | sha256sum -c -
+  kubectl apply --server-side -f "$manifest"
+)
+kubectl rollout status -n envoy-gateway-system deployment/envoy-gateway --timeout=120s
+```
+
+如果只有 Windows 能访问 GitHub，也可以用 **PowerShell** 下载清单，再从 WSL 应用。
 
 ```powershell
 $env:WSL_UTF8 = '1'

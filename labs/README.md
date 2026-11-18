@@ -16,7 +16,13 @@ $env:CGO_ENABLED = '0'
 go build -trimpath -o pod-reader-linux-amd64 .
 ```
 
-回到实验 **Bash**。如果只想先看结果，本机已有构建好的 `go-pod-reader:v1` 镜像，可以从 `kind load` 开始。修改代码后重新构建时建议为新镜像使用新标签，并同步修改 YAML 里的 `image`。
+也可以用 Linux 或 WSL 中的 Go 在仓库根目录编译：
+
+```bash
+(cd labs/pod-reader && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o pod-reader-linux-amd64 .)
+```
+
+任选一种编译方式，然后在实验 **Bash** 的仓库根目录构建并部署。已有 `go-pod-reader:v1` 镜像时可从导入开始。修改代码后，为新镜像选新标签，并同步清单里的 `image`。
 
 ```bash
 docker build --pull=false -t go-pod-reader:v1 labs/pod-reader
@@ -58,7 +64,7 @@ kubectl delete -f k8s/pod-reader.yaml
 典型场景是内部工具的文件或数据库数据目录。这个练习用 BusyBox 写入一份模拟报表。Pod 通过 PVC 请求并挂载卷，StorageClass 决定怎样供应与 PVC 绑定的 PV。
 
 ```bash
-kind load docker-image busybox:1.37.0 --name go-lab
+bash scripts/load-lab-images.sh busybox:1.37.0
 kubectl get storageclass
 kubectl apply -f k8s/storage.yaml
 kubectl rollout status deployment/storage-demo --timeout=120s
@@ -89,10 +95,10 @@ kubectl delete pvc lab-data
 
 ### 检查指标是否可用
 
-当前实验集群已安装 Metrics Server v0.9.1。重建集群后，可以从已缓存的镜像和本地清单重新安装。
+使用新集群时先安装 Metrics Server v0.9.1。已有该组件时，这组命令也可用于复查。
 
 ```bash
-kind load docker-image registry.k8s.io/metrics-server/metrics-server:v0.9.1 --name go-lab
+bash scripts/load-lab-images.sh registry.k8s.io/metrics-server/metrics-server:v0.9.1
 kubectl apply -k k8s/metrics-server
 kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s
 kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s
@@ -107,7 +113,7 @@ kubectl top pods -l app=shipping
 在一个实验 Bash 终端执行：
 
 ```bash
-kind load docker-image busybox:1.37.0 --name go-lab
+bash scripts/load-lab-images.sh busybox:1.37.0
 kubectl apply -f k8s/hpa.yaml
 kubectl rollout status deployment/cpu-demo --timeout=120s
 kubectl get hpa cpu-demo -w
