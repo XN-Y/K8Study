@@ -1,0 +1,8 @@
+apiVersion: lab.example.com/v1alpha1
+kind: ShippingPreview
+metadata:
+  name: shipping-lab
+  namespace: go-lab
+spec:
+  version: v1
+  replicas: 1

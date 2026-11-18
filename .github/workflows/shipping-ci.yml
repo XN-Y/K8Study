@@ -1,0 +1,76 @@
+name: Go CI and shipping image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: |
+            go.mod
+            labs/pod-reader/go.sum
+            labs/preview-controller/go.sum
+      - name: Test and vet services
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Test and vet the pod reader
+        working-directory: labs/pod-reader
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Test and vet the preview controller
+        working-directory: labs/preview-controller
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Verify the container builds
+        run: |
+          docker build --build-arg "VERSION=$GITHUB_SHA" -t go-shipping:ci .
+          docker build -f cmd/checkout/Dockerfile -t go-checkout:ci .
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Publish the shipping image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-shipping"
+          reference=$(bash scripts/publish-shipping-image.sh "$image")
+          docker pull "$reference"
+          docker run --rm "$reference" report | python3 -c '
+          import json, sys
+          report = json.load(sys.stdin)
+          if report.get("version") != sys.argv[1]:
+              sys.exit("Image version does not match the workflow commit")
+          print("Published image ran with the expected commit SHA.")
+          ' "$GITHUB_SHA"
+          printf 'Commit: `%s`\n\nImage tag: `%s:%s`\n\nDeployment image: `%s`\n' \
+            "$GITHUB_SHA" "$image" "$GITHUB_SHA" "$reference" >> "$GITHUB_STEP_SUMMARY"

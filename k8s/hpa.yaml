@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-demo
+  namespace: go-lab
+spec:
+  selector:
+    matchLabels:
+      app: cpu-demo
+  template:
+    metadata:
+      labels:
+        app: cpu-demo
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command: ["sleep", "infinity"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 8Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cpu-demo
+  namespace: go-lab
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cpu-demo
+  minReplicas: 1
+  maxReplicas: 3
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

@@ -1,0 +1,66 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: go-lab-proxy
+  namespace: go-lab
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        container:
+          image: docker.io/envoyproxy/envoy:distroless-v1.40.2
+      envoyService:
+        type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: go-lab-envoy
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: go-lab
+  namespace: go-lab
+spec:
+  gatewayClassName: go-lab-envoy
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: go-lab-proxy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: go-lab
+  namespace: go-lab
+spec:
+  parentRefs:
+    - name: go-lab
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /api/shipping
+      backendRefs:
+        - name: shipping
+          port: 80
+    - matches:
+        - path:
+            type: Exact
+            value: /api/checkout
+      backendRefs:
+        - name: checkout
+          port: 80

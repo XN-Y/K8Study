@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: go-lab
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shipping-config
+  namespace: go-lab
+data:
+  GREETING: "Hello from the Go shipping lab"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipping
+  namespace: go-lab
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  minReadySeconds: 3
+  progressDeadlineSeconds: 90
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: shipping
+  template:
+    metadata:
+      labels:
+        app: shipping
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: go-shipping:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: shipping-config
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 2
+            failureThreshold: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 16Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipping
+  namespace: go-lab
+spec:
+  type: NodePort
+  selector:
+    app: shipping
+  ports:
+    - port: 80
+      targetPort: http
+      nodePort: 30080

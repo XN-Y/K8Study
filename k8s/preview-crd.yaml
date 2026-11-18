@@ -1,0 +1,82 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shippingpreviews.lab.example.com
+spec:
+  group: lab.example.com
+  scope: Namespaced
+  names:
+    plural: shippingpreviews
+    singular: shippingpreview
+    kind: ShippingPreview
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Version
+          type: string
+          jsonPath: .spec.version
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Ready
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Ready")].status
+        - name: ReadyReplicas
+          type: integer
+          jsonPath: .status.readyReplicas
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          x-kubernetes-validations:
+            - rule: "size(self.metadata.name) <= 50"
+              message: "ShippingPreview name must have at most 50 characters"
+          properties:
+            spec:
+              type: object
+              properties:
+                version:
+                  type: string
+                  enum: ["v1", "v2"]
+                  default: v1
+                replicas:
+                  type: integer
+                  format: int32
+                  minimum: 0
+                  maximum: 3
+                  default: 1
+            status:
+              type: object
+              properties:
+                readyReplicas:
+                  type: integer
+                  format: int32
+                  minimum: 0
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, message, observedGeneration, lastTransitionTime]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      lastTransitionTime:
+                        type: string
+                        format: date-time

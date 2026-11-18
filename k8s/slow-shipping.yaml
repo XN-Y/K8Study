@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slow-shipping
+  namespace: go-lab
+data:
+  respond: |
+    #!/bin/sh
+    sleep 5
+    printf 'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slow-shipping
+  namespace: go-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slow-shipping
+  template:
+    metadata:
+      labels:
+        app: slow-shipping
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: responder
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command: ["nc", "-lk", "-p", "8080", "-e", "/scripts/respond"]
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: script
+          configMap:
+            name: slow-shipping
+            defaultMode: 0555
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slow-shipping
+  namespace: go-lab
+spec:
+  selector:
+    app: slow-shipping
+  ports:
+    - port: 80
+      targetPort: http
